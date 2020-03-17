@@ -101,6 +101,8 @@ spec:
               mountPath: /var/lib/kubelet
             - mountPath: /dev
               name: host-dev
+            - mountPath: /host
+              name: hostdir
             - name: "spectrum-scale-config"
               mountPath: /var/lib/ibm/config
             - name: gpfs-classic
@@ -134,6 +136,9 @@ spec:
         - name: host-dev
           hostPath:
             path: /dev
+        - name: hostdir
+          hostPath:
+            path: /
         - name: "spectrum-scale-config"
           configMap:
             name: "spectrum-scale-config"

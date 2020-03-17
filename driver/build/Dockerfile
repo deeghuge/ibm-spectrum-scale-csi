@@ -24,4 +24,12 @@ LABEL name="IBM Spectrum Scale CSI driver" \
       maintainers="IBM Spectrum Scale"
 COPY licenses /licenses
 COPY --from=builder /go/src/github.com/IBM/ibm-spectrum-scale-csi/driver/_output/ibm-spectrum-scale-csi /ibm-spectrum-scale-csi
+
+RUN mkdir /chroot
+ADD chroot-host-wrapper.sh /chroot
+RUN chmod 777 /chroot/chroot-host-wrapper.sh
+RUN    ln -s /chroot/chroot-host-wrapper.sh /chroot/mount \
+    && ln -s /chroot/chroot-host-wrapper.sh /chroot/umount
+
+ENV PATH="/chroot:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ENTRYPOINT ["/ibm-spectrum-scale-csi"]

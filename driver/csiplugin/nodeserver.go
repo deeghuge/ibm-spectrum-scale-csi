@@ -27,6 +27,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/utils/mount"
 )
 
 type ScaleNodeServer struct {
@@ -77,22 +78,61 @@ func (ns *ScaleNodeServer) NodePublishVolume(ctx context.Context, req *csi.NodeP
 
 	glog.Infof("Target SpectrumScale Symlink Path : %v\n", targetSlnkPath[1])
 
-	if _, err := os.Stat(targetPath); err == nil {
-		args := []string{targetPath}
-		outputBytes, err := executeCmd("rmdir", args)
-		glog.Infof("Cmd rmdir args: %v Output: %v", args, outputBytes)
-		if err != nil {
-			return nil, err
+	scaleMounter := mount.New("")
+	notMnt, err := scaleMounter.IsLikelyNotMountPoint(targetPath)
+
+	if err != nil {
+		if os.IsNotExist(err) {
+			if err = os.MkdirAll(targetPath, 0777); err != nil {
+				return nil, status.Error(codes.Internal, err.Error())
+			}
+			notMnt = true
+		} else {
+			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
 
-	args := []string{"-sf", targetSlnkPath[1], targetPath}
-	outputBytes, err := executeCmd("/bin/ln", args)
-	glog.Infof("Cmd /bin/ln args: %v Output: %v", args, outputBytes)
-	if err != nil {
-		return nil, err
+	if !notMnt {
+		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
+	mo := req.GetVolumeCapability().GetMount().GetMountFlags()
+
+	if req.GetReadonly() {
+		mo = append(mo, "ro")
+	}
+
+	mo = append(mo, "bind")
+
+	glog.Infof("DEEBUG mount option: %v", mo)
+
+	err = scaleMounter.Mount(targetSlnkPath[1], targetPath, "", mo)
+	if err != nil {
+		if os.IsPermission(err) {
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+		if strings.Contains(err.Error(), "invalid argument") {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	/*	if _, err := os.Stat(targetPath); err == nil {
+			args := []string{targetPath}
+			outputBytes, err := executeCmd("rmdir", args)
+			glog.Infof("Cmd rmdir args: %v Output: %v", args, outputBytes)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		args := []string{"-sf", targetSlnkPath[1], targetPath}
+		outputBytes, err := executeCmd("/bin/ln", args)
+		glog.Infof("Cmd /bin/ln args: %v Output: %v", args, outputBytes)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	glog.V(4).Infof("Successfully mounted %s", targetPath)
 	return &csi.NodePublishVolumeResponse{}, nil
 }
@@ -110,9 +150,26 @@ func (ns *ScaleNodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.Nod
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
 	}
 
-	if err := os.RemoveAll(targetPath); err != nil {
+	notMnt, err := mount.New("").IsLikelyNotMountPoint(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.Error(codes.NotFound, "targetpath not found")
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
+	if notMnt {
+		return nil, status.Error(codes.NotFound, "volume not mounted")
+	}
+
+	err = mount.New("").Unmount(targetPath)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	//if err := os.RemoveAll(targetPath); err != nil {
+	//	return nil, status.Error(codes.Internal, err.Error())
+	//}
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
