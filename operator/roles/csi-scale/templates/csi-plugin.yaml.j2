@@ -65,6 +65,11 @@ spec:
               mountPath: /registration
         - name: ibm-spectrum-scale-csi
           image: "{{ spectrumScale }}"
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
           args :
             - "--nodeid=$(NODE_ID)"
             - "--endpoint=$(CSI_ENDPOINT)"
