@@ -13,7 +13,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o _ou
 RUN chmod +x _output/ibm-spectrum-scale-csi
 
 
-FROM registry.access.redhat.com/ubi8-minimal:latest
+FROM centos:7
+#FROM registry.access.redhat.com/ubi8-minimal:latest
 LABEL name="IBM Spectrum Scale CSI driver" \
       vendor="ibm" \
       version="1.1.0" \
@@ -25,11 +26,11 @@ LABEL name="IBM Spectrum Scale CSI driver" \
 COPY licenses /licenses
 COPY --from=builder /go/src/github.com/IBM/ibm-spectrum-scale-csi/driver/_output/ibm-spectrum-scale-csi /ibm-spectrum-scale-csi
 
-RUN mkdir /chroot
-ADD chroot-host-wrapper.sh /chroot
-RUN chmod 777 /chroot/chroot-host-wrapper.sh
-RUN    ln -s /chroot/chroot-host-wrapper.sh /chroot/mount \
-    && ln -s /chroot/chroot-host-wrapper.sh /chroot/umount
+#RUN mkdir /chroot
+#ADD chroot-host-wrapper.sh /chroot
+#RUN chmod 777 /chroot/chroot-host-wrapper.sh
+#RUN    ln -s /chroot/chroot-host-wrapper.sh /chroot/mount \
+#    && ln -s /chroot/chroot-host-wrapper.sh /chroot/umount
 
-ENV PATH="/chroot:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+#ENV PATH="/chroot:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ENTRYPOINT ["/ibm-spectrum-scale-csi"]
