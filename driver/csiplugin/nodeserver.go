@@ -102,6 +102,10 @@ func (ns *ScaleNodeServer) NodePublishVolume(ctx context.Context, req *csi.NodeP
 		mo = append(mo, "ro")
 	}
 
+	glog.V(4).Infof("DEEBUG volumeCapability : %#v", volumeCapability)
+	glog.V(4).Infof("DEEBUG volumeCapability->Mode : %#v", volumeCapability.GetAccessMode().GetMode())
+	mo = append(mo, "ro")
+	mo = append(mo, "remount")
 	mo = append(mo, "bind")
 
 	glog.Infof("DEEBUG mount option: %v", mo)
