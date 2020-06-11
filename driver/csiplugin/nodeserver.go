@@ -35,6 +35,8 @@ type ScaleNodeServer struct {
 	mux sync.Mutex
 }
 
+const maxVolumesPerNode = 128
+
 func (ns *ScaleNodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	glog.V(3).Infof("nodeserver NodePublishVolume")
 
@@ -170,6 +172,7 @@ func (ns *ScaleNodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfo
 	glog.V(4).Infof("NodeGetInfo called with req: %#v", req)
 	return &csi.NodeGetInfoResponse{
 		NodeId: ns.Driver.nodeID,
+		MaxVolumesPerNode:  maxVolumesPerNode,
 	}, nil
 }
 
