@@ -1220,9 +1220,102 @@ func (cs *ScaleControllerServer) ListSnapshots(ctx context.Context, req *csi.Lis
 func (cs *ScaleControllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
+
 func (cs *ScaleControllerServer) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
+
+// ControllerExpandVolume volume expansion
 func (cs *ScaleControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	glog.V(3).Infof("ControllerExpandVolume - Volume expand req: %v", req)
+
+	if err := cs.Driver.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_EXPAND_VOLUME); err != nil {
+		glog.V(3).Infof("ControllerExpandVolume - invalid expand volume req: %v", req)
+		return nil, status.Error(codes.Internal, fmt.Sprintf("ControllerExpandVolume ValidateControllerServiceRequest failed: %v", err))
+	}
+
+	volID := req.GetVolumeId()
+	if len(volID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+	}
+
+	capRange := req.GetCapacityRange()
+	if capRange == nil {
+		return nil, status.Error(codes.InvalidArgument, "Capacity range not provided")
+	}
+
+	capacity := uint64(capRange.GetRequiredBytes())
+
+	volumeIDMembers, err := cs.GetVolIdMembers(volID)
+	if err != nil {
+		glog.Errorf("ControllerExpandVolume - Error in source Volume ID %v: %v", volID, err)
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ControllerExpandVolume - Error in source Volume ID %v: %v", volID, err))
+	}
+
+	if !volumeIDMembers.IsFilesetBased {
+		glog.Errorf("ControllerExpandVolume - volume [%s] - Volume exapansion is supported with fileset based volumes", volID)
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ControllerExpandVolume - volume [%s] - Volume exapansion is supported with fileset based volumes", volID))
+	}
+
+	conn, err := cs.getConnFromClusterID(volumeIDMembers.ClusterId)
+	if err != nil {
+		return nil, err
+	}
+
+	filesystemName, err := conn.GetFilesystemName(volumeIDMembers.FsUUID)
+	if err != nil {
+		glog.Errorf("ControllerExpandVolume - Unable to get filesystem Name for Filesystem Uid [%v] and clusterId [%v]. Error [%v]", volumeIDMembers.FsUUID, volumeIDMembers.ClusterId, err)
+		return nil, status.Error(codes.Internal, fmt.Sprintf("ControllerExpandVolume - Unable to get filesystem Name for Filesystem Uid [%v] and clusterId [%v]. Error [%v]", volumeIDMembers.FsUUID, volumeIDMembers.ClusterId, err))
+	}
+
+	filesetResp, err := conn.GetFileSetResponseFromId(filesystemName, volumeIDMembers.FsetId)
+	if err != nil {
+		if strings.Contains(err.Error(), "no filesets found for Id") {
+			glog.Errorf("ControllerExpandVolume - fileset Id [%v] in filesystem [%v] and ClusterId [%v] not found", volumeIDMembers.FsetId, filesystemName, volumeIDMembers.ClusterId)
+			return nil, status.Error(codes.NotFound, fmt.Sprintf("ControllerExpandVolume - fileset Id [%v] in filesystem [%v] and ClusterId [%v] not found", volumeIDMembers.FsetId, filesystemName, volumeIDMembers.ClusterId))
+		} else {
+			glog.Errorf("ControllerExpandVolume - unable to get Fileset Name for Fileset Id [%v] FS [%v] ClusterId [%v]", volumeIDMembers.FsetId, filesystemName, volumeIDMembers.ClusterId)
+			return nil, status.Error(codes.Internal, fmt.Sprintf("ControllerExpandVolume - unable to get Fileset Name for Fileset Id [%v] FS [%v] ClusterId [%v]", volumeIDMembers.FsetId, filesystemName, volumeIDMembers.ClusterId))
+		}
+	}
+
+	sLinkRelPath := strings.Replace(volumeIDMembers.SymLnkPath, cs.Driver.primary.PrimaryFSMount, "", 1)
+	sLinkRelPath = strings.Trim(sLinkRelPath, "!/")
+
+	/* Confirm it is same fileset which was created for this PV */
+	pvName := filepath.Base(sLinkRelPath)
+	filesetName := filesetResp.FilesetName
+
+	if pvName != filesetName {
+		glog.Errorf("ControllerExpandVolume - PV name from path [%v] does not match with filesetName [%v].", pvName, filesetName)
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("ControllerExpandVolume - PV name from path [%v] does not match with filesetName [%v].", pvName, filesetName))
+	}
+
+	quota, err := conn.ListFilesetQuota(filesystemName, filesetResp.FilesetName)
+	if err != nil {
+		glog.Errorf("unable to list quota for fileset [%v] in filesystem [%v]. Error [%v]", filesetResp.FilesetName, filesystemName, err)
+		return nil, status.Error(codes.Internal, fmt.Sprintf("unable to list quota for fileset [%v] in filesystem [%v]. Error [%v]", filesetResp.FilesetName, filesystemName, err))
+	}
+
+	filesetQuotaBytes, err := ConvertToBytes(quota)
+	if err != nil {
+		glog.Errorf("unable to convert quota for fileset [%v] in filesystem [%v]. Error [%v]", filesetResp.FilesetName, filesystemName, err)
+		return nil, status.Error(codes.Internal, fmt.Sprintf("unable to convert quota for fileset [%v] in filesystem [%v]. Error [%v]", filesetResp.FilesetName, filesystemName, err))
+	}
+
+	if filesetQuotaBytes < capacity {
+		volsize := strconv.FormatUint(capacity, 10)
+		err = conn.SetFilesetQuota(filesystemName, filesetResp.FilesetName, volsize)
+		if err != nil {
+			glog.Errorf("unable to expand the volume. Error [%v]", err)
+			return nil, status.Error(codes.Internal, fmt.Sprintf("unable to expand the volume. Error [%v]", err))
+		}
+	} else {
+		capacity = filesetQuotaBytes
+	}
+
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         int64(capacity),
+		NodeExpansionRequired: false,
+	}, nil
 }

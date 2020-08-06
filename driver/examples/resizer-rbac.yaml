@@ -1,0 +1,58 @@
+# This YAML file contains all RBAC objects that are necessary to run external
+# CSI resizer.
+#
+# In production, each CSI driver deployment has to be customized:
+# - to avoid conflicts, use non-default namespace and different names
+#   for non-namespaced entities like the ClusterRole
+# - decide whether the deployment replicates the external CSI
+#   resizer, in which case leadership election must be enabled;
+#   this influences the RBAC setup, see below
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ibm-spectrum-scale-csi-resizer
+  # replace with non-default namespace name
+  namespace: ibm-spectrum-scale-csi-driver
+
+---
+# Resizer must be able to work with PVCs, PVs, SCs.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ibm-spectrum-scale-csi-resizer
+rules:
+  # The following rule should be uncommented for plugins that require secrets
+  # for provisioning.
+  # - apiGroups: [""]
+  #   resources: ["secrets"]
+  #   verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ibm-spectrum-scale-csi-resizer
+subjects:
+  - kind: ServiceAccount
+    name: ibm-spectrum-scale-csi-resizer
+    namespace: ibm-spectrum-scale-csi-driver
+roleRef:
+  kind: ClusterRole
+  name: ibm-spectrum-scale-csi-resizer
+  apiGroup: rbac.authorization.k8s.io

@@ -169,11 +169,13 @@ func (ns *ScaleNodeServer) NodeGetCapabilities(ctx context.Context, req *csi.Nod
 func (ns *ScaleNodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	glog.V(4).Infof("NodeGetInfo called with req: %#v", req)
 	return &csi.NodeGetInfoResponse{
-		NodeId: ns.Driver.nodeID,
+		NodeId:            ns.Driver.nodeID,
+		MaxVolumesPerNode: 10,
 	}, nil
 }
 
 func (ns *ScaleNodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+	glog.V(3).Infof("NodeExpandVolume - Volume Node expand req: %v", req)
 	return nil, status.Error(codes.Unimplemented, "")
 }
 func (ns *ScaleNodeServer) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {

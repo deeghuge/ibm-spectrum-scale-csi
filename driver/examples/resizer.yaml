@@ -1,0 +1,30 @@
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: ibm-spectrum-scale-csi-resizer
+spec:
+  serviceName: "ibm-spectrum-scale-csi-resizer"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ibm-spectrum-scale-csi-resizer
+  template:
+    metadata:
+      labels:
+        app: ibm-spectrum-scale-csi-resizer
+    spec:
+      serviceAccountName: ibm-spectrum-scale-csi-resizer
+      containers:
+        - name: csi-resizer
+          image: quay.io/k8scsi/csi-resizer:canary
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+      volumes:
+        - hostPath:
+            path: /var/lib/kubelet/plugins/spectrumscale.csi.ibm.com
+            type: DirectoryOrCreate
+          name: socket-dir
