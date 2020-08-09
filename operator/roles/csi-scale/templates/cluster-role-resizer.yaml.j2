@@ -19,6 +19,7 @@ rules:
   - list
   - watch
   - patch
+  - update
 - apiGroups:
   - ''
   resources:
@@ -28,9 +29,9 @@ rules:
   - list
   - watch
 - apiGroups:
-  - ''
+  - storage.k8s.io
   resources:
-  - pods
+  - storageclasses
   verbs:
   - get
   - list
@@ -41,6 +42,7 @@ rules:
   - persistentvolumeclaims/status
   verbs:
   - patch
+  - update
 - apiGroups:
   - ''
   resources:
