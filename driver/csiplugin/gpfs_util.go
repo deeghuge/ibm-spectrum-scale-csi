@@ -68,6 +68,17 @@ type scaleVolId struct {
 	IsFilesetBased bool
 }
 
+type scaleSrcVolId struct {
+	ClusterId      string
+	FsUUID         string
+	FsetId         string
+	DirPath        string
+	SymLnkPath     string
+	IsFilesetBased bool
+	FsetName       string
+	FsName         string
+}
+
 type scaleSnapId struct {
 	ClusterId string
 	FsUUID    string

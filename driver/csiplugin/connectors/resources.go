@@ -241,6 +241,14 @@ type CopySnapshotRequest struct {
 	Force            bool   `json:"force,omitempty"`
 }
 
+type CopyVolumeRequest struct {
+	TargetFilesystem string `json:"targetFilesystem,omitempty"`
+	TargetFileset    string `json:"targetFileset,omitempty"`
+	TargetPath       string `json:"targetPath,omitempty"`
+	NodeClass        string `json:"nodeclassName,omitempty"`
+	Force            bool   `json:"force,omitempty"`
+}
+
 type GenericResponse struct {
 	Status Status `json:"status,omitempty"`
 	Jobs   []Job  `json:"jobs,omitempty"`

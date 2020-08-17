@@ -415,10 +415,29 @@ func (cs *ScaleControllerServer) CreateVolume(ctx context.Context, req *csi.Crea
 
 	volSrc := req.GetVolumeContentSource()
 	isSnapSource := false
+	isVolSource := false
+	/*	if req.GetVolumeContentSource() != nil {
+		volSrc := req.VolumeContentSource
+		switch volSrc.Type.(type) {
+		case *csi.VolumeContentSource_Snapshot:
+		case *csi.VolumeContentSource_Volume:
+		default:
+		}
+	}*/
+
 	snapIdMembers := scaleSnapId{}
+	srcVolIDMembers := scaleSrcVolId{}
 	if volSrc != nil {
-		if volSrc.GetVolume() != nil {
-			return nil, status.Error(codes.Unimplemented, "Volume as volume content source is not supported")
+		srcVol := volSrc.GetVolume()
+		if srcVol != nil {
+			srcVolID := srcVol.GetVolumeId()
+			srcVolIDMembers, err = cs.GetSrcVolIdMembers(srcVolID)
+			glog.V(4).Infof("DEEBUG: srcVolIDMembers : %v", srcVolIDMembers)
+			if err != nil {
+				glog.Errorf("volume:[%v] - Invalid volume ID %s [%v]", volName, srcVolID, err)
+				return nil, err
+			}
+			isVolSource = true
 		}
 
 		srcSnap := volSrc.GetSnapshot()
@@ -510,6 +529,14 @@ func (cs *ScaleControllerServer) CreateVolume(ctx context.Context, req *csi.Crea
 		scaleVol.ClusterId = PCid
 	}
 
+	if isVolSource {
+		err = cs.validateSrcVolID(&srcVolIDMembers, scaleVol, PCid)
+		if err != nil {
+			glog.Errorf("volume:[%v] - Error in source volume validation [%v]", volName, err)
+			return nil, err
+		}
+	}
+
 	if isSnapSource {
 		err = cs.validateSnapId(&snapIdMembers, scaleVol, PCid)
 		if err != nil {
@@ -564,6 +591,14 @@ func (cs *ScaleControllerServer) CreateVolume(ctx context.Context, req *csi.Crea
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to generate volume id. Error: %v", err))
 	}
 
+	if isVolSource {
+		err = cs.copyVolContent(scaleVol, srcVolIDMembers, fsDetails, targetPath)
+		if err != nil {
+			glog.Errorf("CreateVolume [%s]: [%v]", volName, err)
+			return nil, err
+		}
+	}
+
 	if isSnapSource {
 		err = cs.copySnapContent(scaleVol, snapIdMembers, fsDetails, targetPath)
 		if err != nil {
@@ -580,6 +615,31 @@ func (cs *ScaleControllerServer) CreateVolume(ctx context.Context, req *csi.Crea
 			ContentSource: volSrc,
 		},
 	}, nil
+}
+
+func (cs *ScaleControllerServer) copyVolContent(scVol *scaleVolume, vID scaleSrcVolId, fsDetails connectors.FileSystem_v2, targetPath string) error {
+	glog.V(3).Infof("copyVolContent volume ID: [%v], scaleVolume: [%v]", vID, scVol)
+	conn, err := cs.getConnFromClusterID(vID.ClusterId)
+	if err != nil {
+		return err
+	}
+
+	err = cs.validateRemoteFs(fsDetails, scVol)
+	if err != nil {
+		return err
+	}
+
+	fsMntPt := fsDetails.Mount.MountPoint
+	targetPath = fmt.Sprintf("%s/%s", fsMntPt, targetPath)
+	path := fmt.Sprintf("%s%s", vID.FsetName, "-data")
+
+	err = conn.CopyFilesetPath(vID.FsName, vID.FsetName, path, targetPath, scVol.NodeClass)
+	if err != nil {
+		glog.Errorf("failed to create volume from volume. Error: [%v]", err)
+		return status.Error(codes.Internal, fmt.Sprintf("failed to create volume from volume. Error: [%v]", err))
+	}
+
+	return nil
 }
 
 func (cs *ScaleControllerServer) copySnapContent(scVol *scaleVolume, snapId scaleSnapId, fsDetails connectors.FileSystem_v2, targetPath string) error {
@@ -603,6 +663,73 @@ func (cs *ScaleControllerServer) copySnapContent(scVol *scaleVolume, snapId scal
 		return status.Error(codes.Internal, fmt.Sprintf("failed to create volume from snapshot %s: [%v]", snapId.SnapName, err))
 	}
 
+	return nil
+}
+
+func (cs *ScaleControllerServer) validateSrcVolID(vID *scaleSrcVolId, scVol *scaleVolume, pCid string) error {
+	glog.V(3).Infof("validateVolId [%v]", vID)
+	conn, err := cs.getConnFromClusterID(vID.ClusterId)
+	if err != nil {
+		return err
+	}
+
+	// This is kind of snapshot restore
+	isSnapSupported, err := conn.IsSnapshotSupported()
+	if err != nil {
+		return err
+	}
+
+	if !isSnapSupported {
+		return status.Error(codes.FailedPrecondition, fmt.Sprintf("the version of Spectrum Scale on cluster %s does not support this operation. Min required Spectrum Scale version is 5.0.5.2", vID.ClusterId))
+	}
+
+	if scVol.ClusterId != "" && vID.ClusterId != scVol.ClusterId {
+		return status.Error(codes.InvalidArgument, fmt.Sprintf("cannot create volume from a source volume from another cluster. Volume is being created in cluster %s, source volume is from cluster %s.", scVol.ClusterId, vID.ClusterId))
+	}
+
+	if scVol.ClusterId == "" && vID.ClusterId != pCid {
+		return status.Error(codes.InvalidArgument, fmt.Sprintf("cannot create volume from a source volume from another cluster. Volume is being created in cluster %s, source volume is from cluster %s.", pCid, vID.ClusterId))
+	}
+
+	if scVol.NodeClass != "" {
+		isValidNodeclass, err := conn.IsValidNodeclass(scVol.NodeClass)
+		if err != nil {
+			return err
+		}
+
+		if !isValidNodeclass {
+			return status.Error(codes.NotFound, fmt.Sprintf("nodeclass [%s] not found on cluster [%v]", scVol.NodeClass, scVol.ClusterId))
+		}
+	}
+
+	vID.FsName, err = conn.GetFilesystemName(vID.FsUUID)
+
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("unable to get filesystem Name for Id [%v] and clusterId [%v]. Error [%v]", vID.FsUUID, vID.ClusterId, err))
+	}
+
+	if vID.FsName != scVol.VolBackendFs {
+		isFsMounted, err := conn.IsFilesystemMountedOnGUINode(vID.FsName)
+		if err != nil {
+			return status.Error(codes.Internal, fmt.Sprintf("error in getting filesystem mount details for %s", vID.FsName))
+		}
+		if !isFsMounted {
+			return status.Error(codes.Internal, fmt.Sprintf("filesystem %s is not mounted on GUI node", vID.FsName))
+		}
+	}
+
+	vID.FsetName, err = conn.GetFileSetNameFromId(vID.FsName, vID.FsetId)
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("error in getting fileset details for %s", vID.FsetId))
+	}
+
+	isFsetLinked, err := conn.IsFilesetLinked(vID.FsName, vID.FsetName)
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("unable to get fileset link information for [%v]", vID.FsetName))
+	}
+	if !isFsetLinked {
+		return status.Error(codes.Internal, fmt.Sprintf("fileset [%v] of source volume is not linked", vID.FsetName))
+	}
 	return nil
 }
 
@@ -696,6 +823,49 @@ func (cs *ScaleControllerServer) GetSnapIdMembers(sId string) (scaleSnapId, erro
 	}
 
 	return sIdMem, nil
+}
+
+func (cs *ScaleControllerServer) GetSrcVolIdMembers(vId string) (scaleSrcVolId, error) {
+	splitVid := strings.Split(vId, ";")
+	var vIdMem scaleSrcVolId
+
+	if len(splitVid) == 3 {
+		/* This is LW volume */
+		/* <cluster_id>;<filesystem_uuid>;path=<symlink_path> */
+		vIdMem.ClusterId = splitVid[0]
+		vIdMem.FsUUID = splitVid[1]
+		SlnkPart := splitVid[2]
+		slnkSplit := strings.Split(SlnkPart, "=")
+		if len(slnkSplit) < 2 {
+			return scaleSrcVolId{}, status.Error(codes.Internal, fmt.Sprintf("Invalid Volume Id : [%v]", vId))
+		}
+		vIdMem.SymLnkPath = slnkSplit[1]
+		vIdMem.IsFilesetBased = false
+		return vIdMem, nil
+	}
+
+	if len(splitVid) == 4 {
+		/* This is fileset Based volume */
+		/* <cluster_id>;<filesystem_uuid>;fileset=<fileset_id>; path=<symlink_path> */
+		vIdMem.ClusterId = splitVid[0]
+		vIdMem.FsUUID = splitVid[1]
+		fileSetPart := splitVid[2]
+		fileSetSplit := strings.Split(fileSetPart, "=")
+		if len(fileSetSplit) < 2 {
+			return scaleSrcVolId{}, status.Error(codes.Internal, fmt.Sprintf("Invalid Volume Id : [%v]", vId))
+		}
+		vIdMem.FsetId = fileSetSplit[1]
+		SlnkPart := splitVid[3]
+		slnkSplit := strings.Split(SlnkPart, "=")
+		if len(slnkSplit) < 2 {
+			return scaleSrcVolId{}, status.Error(codes.Internal, fmt.Sprintf("Invalid Volume Id : [%v]", vId))
+		}
+		vIdMem.SymLnkPath = slnkSplit[1]
+		vIdMem.IsFilesetBased = true
+		return vIdMem, nil
+	}
+
+	return scaleSrcVolId{}, status.Error(codes.Internal, fmt.Sprintf("Invalid Volume Id : [%v]", vId))
 }
 
 func (cs *ScaleControllerServer) GetVolIdMembers(vId string) (scaleVolId, error) {

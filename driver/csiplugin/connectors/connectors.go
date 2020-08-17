@@ -71,6 +71,7 @@ type SpectrumScaleConnector interface {
 	CheckIfSnapshotExist(filesystemName string, filesetName string, snapshotName string) (bool, error)
 	ListFilesetSnapshots(filesystemName string, filesetName string) ([]Snapshot_v2, error)
 	CopyFsetSnapshotPath(filesystemName string, filesetName string, snapshotName string, srcPath string, targetPath string, nodeclass string) error
+	CopyFilesetPath(filesystemName string, filesetName string, srcPath string, targetPath string, nodeclass string) error
 }
 
 const (
