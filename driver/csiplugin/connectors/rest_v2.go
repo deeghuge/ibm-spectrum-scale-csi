@@ -952,7 +952,7 @@ func (s *spectrumRestV2) GetFileSetNameFromId(filesystemName string, Id string) 
 
 	filesetResponse, err := s.GetFileSetResponseFromId(filesystemName, Id)
 	if err != nil {
-		return "", fmt.Errorf("Fileset response not found for fileset Id %v:%v", filesystemName, Id)
+		return "", fmt.Errorf("Fileset response not found for fileset Id %v:%v. Error: %v", filesystemName, Id, err)
 	}
 	return filesetResponse.FilesetName, nil
 }

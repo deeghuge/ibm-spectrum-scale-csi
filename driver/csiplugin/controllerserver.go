@@ -793,12 +793,18 @@ func (cs *ScaleControllerServer) DeleteVolume(ctx context.Context, req *csi.Dele
 
 	if volumeIdMembers.IsFilesetBased {
 		FilesetName, err := conn.GetFileSetNameFromId(FilesystemName, volumeIdMembers.FsetId)
+		filesetFound := true
 
 		if err != nil {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("unable to get Fileset Name for Id [%v] FS [%v] ClusterId [%v]", volumeIdMembers.FsetId, FilesystemName, volumeIdMembers.ClusterId))
+			if strings.Contains(err.Error(), "no filesets found for Id") {
+				filesetFound = false
+				glog.V(4).Infof("fileset with id %v in filesystem %v is not present, skipping fileset deletion", volumeIdMembers.FsetId, FilesystemName)
+			} else {
+				return nil, status.Error(codes.Internal, fmt.Sprintf("unable to get Fileset Name for Id [%v] FS [%v] ClusterId [%v]", volumeIdMembers.FsetId, FilesystemName, volumeIdMembers.ClusterId))
+			}
 		}
 
-		if FilesetName != "" {
+		if filesetFound && FilesetName != "" {
 			/* Confirm it is same fileset which was created for this PV */
 			pvName := filepath.Base(sLinkRelPath)
 			if pvName == FilesetName {
