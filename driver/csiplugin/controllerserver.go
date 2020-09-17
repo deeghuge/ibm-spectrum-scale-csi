@@ -165,15 +165,15 @@ func (cs *ScaleControllerServer) GenerateVolId(scVol *scaleVolume) (string, erro
 	}
 
 	if scVol.IsFilesetBased {
-		fSetuid, err := scVol.Connector.GetFileSetUid(scVol.VolBackendFs, scVol.VolName)
+		//fSetuid, err := scVol.Connector.GetFileSetUid(scVol.VolBackendFs, scVol.VolName)
 
-		if err != nil {
-			return "", status.Error(codes.Internal, fmt.Sprintf("Unable to get Fset UID for [%v] in FS [%v]. Error [%v]", scVol.VolName, scVol.VolBackendFs, err))
-		}
+		//if err != nil {
+		//	return "", status.Error(codes.Internal, fmt.Sprintf("Unable to get Fset UID for [%v] in FS [%v]. Error [%v]", scVol.VolName, scVol.VolBackendFs, err))
+		//}
 
 		/* <cluster_id>;<filesystem_uuid>;fileset=<fileset_id>; path=<symlink_path> */
 		slink := fmt.Sprintf("%s/%s", scVol.PrimarySLnkPath, scVol.VolName)
-		volId = fmt.Sprintf("%s;%s;fileset=%s;path=%s", scVol.ClusterId, uid, fSetuid, slink)
+		volId = fmt.Sprintf("%s;%s;filesetName=%s;path=%s", scVol.ClusterId, uid, scVol.VolName, slink)
 	} else {
 		/* <cluster_id>;<filesystem_uuid>;path=<symlink_path> */
 		slink := fmt.Sprintf("%s/%s", scVol.PrimarySLnkPath, scVol.VolName)
@@ -598,7 +598,11 @@ func (cs *ScaleControllerServer) GetVolIdMembers(vId string) (scaleVolId, error)
 		if len(fileSetSplit) < 2 {
 			return scaleVolId{}, status.Error(codes.Internal, fmt.Sprintf("Invalid Volume Id : [%v]", vId))
 		}
-		vIdMem.FsetId = fileSetSplit[1]
+		if fileSetSplit[0] == "filesetName" {
+			vIdMem.FsetName = fileSetSplit[1]
+		} else {
+			vIdMem.FsetId = fileSetSplit[1]
+		}
 		SlnkPart := splitVid[3]
 		slnkSplit := strings.Split(SlnkPart, "=")
 		if len(slnkSplit) < 2 {
@@ -670,10 +674,15 @@ func (cs *ScaleControllerServer) DeleteVolume(ctx context.Context, req *csi.Dele
 	sLinkRelPath = strings.Trim(sLinkRelPath, "!/")
 
 	if volumeIdMembers.IsFilesetBased {
-		FilesetName, err := conn.GetFileSetNameFromId(FilesystemName, volumeIdMembers.FsetId)
+		var FilesetName string
+		if volumeIdMembers.FsetName != "" {
+			FilesetName = volumeIdMembers.FsetName
 
-		if err != nil {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("Unable to get Fileset Name for Id [%v] FS [%v] ClusterId [%v]", volumeIdMembers.FsetId, FilesystemName, volumeIdMembers.ClusterId))
+		} else {
+			FilesetName, err = conn.GetFileSetNameFromId(FilesystemName, volumeIdMembers.FsetId)
+			if err != nil {
+				return nil, status.Error(codes.Internal, fmt.Sprintf("Unable to get Fileset Name for Id [%v] FS [%v] ClusterId [%v]", volumeIdMembers.FsetId, FilesystemName, volumeIdMembers.ClusterId))
+			}
 		}
 
 		if FilesetName != "" {
