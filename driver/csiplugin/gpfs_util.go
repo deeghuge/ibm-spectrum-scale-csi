@@ -53,6 +53,7 @@ type scaleVolume struct {
 	PrimaryFSMount     string                            `json:"primaryFSMount"`
 	ParentFileset      string                            `json:"parentFileset"`
 	LocalFS            string                            `json:"localFS"`
+	VolumePrefix       string                            `json:"volumePrefix"`
 }
 
 type scaleVolId struct {
@@ -76,6 +77,7 @@ func getScaleVolumeOptions(volOptions map[string]string) (*scaleVolume, error) {
 	fsType, fsTypeSpecified := volOptions[connectors.UserSpecifiedFilesetType]
 	inodeLim, inodeLimSpecified := volOptions[connectors.UserSpecifiedInodeLimit]
 	parentFileset, isparentFilesetSpecified := volOptions[connectors.UserSpecifiedParentFset]
+	scaleVol.VolumePrefix, _ = volOptions[connectors.UserSpecifiedVolumePrefix]
 
 	// Handling empty values
 	scaleVol.VolDirBasePath = ""

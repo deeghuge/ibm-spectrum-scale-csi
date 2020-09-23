@@ -69,6 +69,7 @@ const (
 	UserSpecifiedParentFset     string = "parentFileset"
 	UserSpecifiedVolBackendFs   string = "volBackendFs"
 	UserSpecifiedVolDirPath     string = "volDirBasePath"
+	UserSpecifiedVolumePrefix   string = "volumePrefix"
 )
 
 func GetSpectrumScaleConnector(config settings.Clusters) (SpectrumScaleConnector, error) {

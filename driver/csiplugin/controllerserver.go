@@ -354,10 +354,8 @@ func (cs *ScaleControllerServer) CreateVolume(ctx context.Context, req *csi.Crea
 		return nil, status.Error(codes.InvalidArgument, "Request cannot be empty")
 	}
 
-	volName := req.GetName()
-	if volName == "" {
-		return nil, status.Error(codes.InvalidArgument, "Volume Name is a required field")
-	}
+	var volName string
+	volName = req.GetName()
 
 	/* Get volume size in bytes */
 	volSize := cs.getVolumeSizeInBytes(req)
@@ -380,6 +378,10 @@ func (cs *ScaleControllerServer) CreateVolume(ctx context.Context, req *csi.Crea
 
 	if err != nil {
 		return nil, err
+	}
+
+	if scaleVol.VolumePrefix != "" {
+		volName = scaleVol.VolumePrefix + "-" + volName
 	}
 
 	scaleVol.VolName = volName
