@@ -62,12 +62,12 @@ type ScaleDriver struct {
 	ns  *ScaleNodeServer
 	cs  *ScaleControllerServer
 
-	connmap              map[string]connectors.SpectrumScaleConnector
-	cmap                 settings.ScaleSettingsConfigMap
-	primary              settings.Primary
-	reqmap               map[string]int64
-	snapjobstatusmap     map[string]SnapCopyJobDetails
-	volcopyjobstatusmap  map[string]VolCopyJobDetails
+	connmap             map[string]connectors.SpectrumScaleConnector
+	cmap                settings.ScaleSettingsConfigMap
+	primary             settings.Primary
+	reqmap              map[string]int64
+	snapjobstatusmap    map[string]SnapCopyJobDetails
+	volcopyjobstatusmap map[string]VolCopyJobDetails
 
 	vcap  []*csi.VolumeCapability_AccessMode
 	cscap []*csi.ControllerServiceCapability

@@ -96,6 +96,10 @@ const (
 	UserSpecifiedVolDirPath     string = "volDirBasePath"
 	UserSpecifiedNodeClass      string = "nodeClass"
 	UserSpecifiedPermissions    string = "permissions"
+	UserSpecifiedEncryption     string = "encryption"
+	UserSpecifiedReplica        string = "replica"
+	UserSpecifiedCompression    string = "compression"
+	UserSpecifiedTier           string = "tier"
 
 	FilesetComment string = "Fileset created by IBM Container Storage Interface driver"
 )

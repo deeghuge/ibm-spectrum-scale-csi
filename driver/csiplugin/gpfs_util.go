@@ -59,6 +59,13 @@ type scaleVolume struct {
 	FsetLinkPath       string                            `json:"fsetLinkPath"`
 	FsMountPoint       string                            `json:"fsMountPoint"`
 	NodeClass          string                            `json:"nodeClass"`
+	encryption         bool                              `json:"encryption"`
+	compression        bool                              `json:"compression"`
+	replica            int                               `json:"replica"`
+	tier               string                            `json:"tier"`
+	consistencyGroup   string                            `json:"consistencyGroup"`
+	Application        string                            `json:"application"`
+	storageClassType   int                               `json:"storageClassType"`
 }
 
 type scaleVolId struct {
@@ -119,6 +126,10 @@ func getScaleVolumeOptions(volOptions map[string]string) (*scaleVolume, error) {
 	parentFileset, isparentFilesetSpecified := volOptions[connectors.UserSpecifiedParentFset]
 	nodeClass, isNodeClassSpecified := volOptions[connectors.UserSpecifiedNodeClass]
 	permissions, isPermissionsSpecified := volOptions[connectors.UserSpecifiedPermissions]
+	encryption, isEncryptionsSpecified := volOptions[connectors.UserSpecifiedEncryption]
+	replica, isReplicaSpecified := volOptions[connectors.UserSpecifiedReplica]
+	tier, isTierSpecified := volOptions[connectors.UserSpecifiedTier]
+	compression, isCompressionSpecified := volOptions[connectors.UserSpecifiedCompression]
 
 	// Handling empty values
 	scaleVol.VolDirBasePath = ""
@@ -131,137 +142,191 @@ func getScaleVolumeOptions(volOptions map[string]string) (*scaleVolume, error) {
 		fsSpecified = false
 	}
 
+	// if filesystem is specified it is storgeClass type 0(old) else consider it as new storageClass type(1)
 	if fsSpecified {
 		scaleVol.VolBackendFs = volBckFs
-	} else {
-		return &scaleVolume{}, status.Error(codes.InvalidArgument, "volBackendFs must be specified in storageClass")
-	}
+		scaleVol.storageClassType = 0
 
-	if fsTypeSpecified && fsType == "" {
-		fsTypeSpecified = false
-	}
+		//else {
+		//	return &scaleVolume{}, status.Error(codes.InvalidArgument, "volBackendFs must be specified in storageClass")
+		//	}
 
-	if volDirPathSpecified && volDirPath == "" {
-		volDirPathSpecified = false
-	}
-
-	if !fsTypeSpecified && !volDirPathSpecified {
-		fsTypeSpecified = true
-		fsType = independentFileset
-	}
-
-	if uidSpecified && uid == "" {
-		uidSpecified = false
-	}
-
-	if gidSpecified && gid == "" {
-		gidSpecified = false
-	}
-
-	if gidSpecified && !uidSpecified {
-		uidSpecified = true
-		uid = "0"
-	}
-
-	if inodeLimSpecified && inodeLim == "" {
-		inodeLimSpecified = false
-	}
-
-	if isparentFilesetSpecified && parentFileset == "" {
-		isparentFilesetSpecified = false
-	}
-	if clusterIDSpecified && clusterID != "" {
-		scaleVol.ClusterId = clusterID
-	}
-
-	if isPermissionsSpecified && permissions == "" {
-		isPermissionsSpecified = false
-	}
-
-	if volDirPathSpecified {
-		if fsTypeSpecified {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "filesetType and volDirBasePath must not be specified together in storageClass")
+		if fsTypeSpecified && fsType == "" {
+			fsTypeSpecified = false
 		}
-		if isparentFilesetSpecified {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "parentFileset and volDirBasePath must not be specified together in storageClass")
-		}
-		if inodeLimSpecified {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "inodeLimit and volDirBasePath must not be specified together in storageClass")
-		}
-	}
 
-	if fsTypeSpecified {
-		if fsType == dependentFileset {
-			if inodeLimSpecified {
-				return &scaleVolume{}, status.Error(codes.InvalidArgument, "inodeLimit and filesetType=dependent must not be specified together in storageClass")
+		if volDirPathSpecified && volDirPath == "" {
+			volDirPathSpecified = false
+		}
+
+		if !fsTypeSpecified && !volDirPathSpecified {
+			fsTypeSpecified = true
+			fsType = independentFileset
+		}
+
+		if uidSpecified && uid == "" {
+			uidSpecified = false
+		}
+
+		if gidSpecified && gid == "" {
+			gidSpecified = false
+		}
+
+		if gidSpecified && !uidSpecified {
+			uidSpecified = true
+			uid = "0"
+		}
+
+		if inodeLimSpecified && inodeLim == "" {
+			inodeLimSpecified = false
+		}
+
+		if isparentFilesetSpecified && parentFileset == "" {
+			isparentFilesetSpecified = false
+		}
+		if clusterIDSpecified && clusterID != "" {
+			scaleVol.ClusterId = clusterID
+		}
+
+		if isPermissionsSpecified && permissions == "" {
+			isPermissionsSpecified = false
+		}
+
+		if volDirPathSpecified {
+			if fsTypeSpecified {
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "filesetType and volDirBasePath must not be specified together in storageClass")
 			}
-		} else if fsType == independentFileset {
 			if isparentFilesetSpecified {
-				return &scaleVolume{}, status.Error(codes.InvalidArgument, "parentFileset and filesetType=independent(Default) must not be specified together in storageClass")
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "parentFileset and volDirBasePath must not be specified together in storageClass")
 			}
-		} else {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "Invalid value specified for filesetType in storageClass")
-		}
-	}
-
-	if fsTypeSpecified && inodeLimSpecified {
-		inodelimit, err := strconv.Atoi(inodeLim)
-		if err != nil {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "Invalid value specified for inodeLimit in storageClass")
-		}
-		if inodelimit < 1024 {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "inodeLimit specified in storageClass must be equal to or greater than 1024")
-		}
-	}
-
-	/* Check if either fileset based or LW volume. */
-
-	if volDirPathSpecified {
-		scaleVol.VolDirBasePath = volDirPath
-		scaleVol.IsFilesetBased = false
-	}
-	if fsTypeSpecified {
-		scaleVol.IsFilesetBased = true
-	}
-
-	/* Get UID/GID */
-	if uidSpecified {
-		scaleVol.VolUid = uid
-	}
-
-	if gidSpecified {
-		scaleVol.VolGid = gid
-	}
-
-	if isPermissionsSpecified {
-		_, err := strconv.Atoi(permissions)
-		if err != nil || len(permissions) != 3 {
-			return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for permissions")
+			if inodeLimSpecified {
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "inodeLimit and volDirBasePath must not be specified together in storageClass")
+			}
 		}
 
-		for _, n := range permissions {
-			if n < 48 || n > 55 {
+		if fsTypeSpecified {
+			if fsType == dependentFileset {
+				if inodeLimSpecified {
+					return &scaleVolume{}, status.Error(codes.InvalidArgument, "inodeLimit and filesetType=dependent must not be specified together in storageClass")
+				}
+			} else if fsType == independentFileset {
+				if isparentFilesetSpecified {
+					return &scaleVolume{}, status.Error(codes.InvalidArgument, "parentFileset and filesetType=independent(Default) must not be specified together in storageClass")
+				}
+			} else {
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "Invalid value specified for filesetType in storageClass")
+			}
+		}
+
+		if fsTypeSpecified && inodeLimSpecified {
+			inodelimit, err := strconv.Atoi(inodeLim)
+			if err != nil {
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "Invalid value specified for inodeLimit in storageClass")
+			}
+			if inodelimit < 1024 {
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "inodeLimit specified in storageClass must be equal to or greater than 1024")
+			}
+		}
+
+		/* Check if either fileset based or LW volume. */
+
+		if volDirPathSpecified {
+			scaleVol.VolDirBasePath = volDirPath
+			scaleVol.IsFilesetBased = false
+		}
+		if fsTypeSpecified {
+			scaleVol.IsFilesetBased = true
+		}
+
+		/* Get UID/GID */
+		if uidSpecified {
+			scaleVol.VolUid = uid
+		}
+
+		if gidSpecified {
+			scaleVol.VolGid = gid
+		}
+
+		if isPermissionsSpecified {
+			_, err := strconv.Atoi(permissions)
+			if err != nil || len(permissions) != 3 {
 				return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for permissions")
 			}
+
+			for _, n := range permissions {
+				if n < 48 || n > 55 {
+					return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for permissions")
+				}
+			}
+
+			scaleVol.VolPermissions = permissions
 		}
 
-		scaleVol.VolPermissions = permissions
-	}
+		if scaleVol.IsFilesetBased {
+			if fsTypeSpecified {
+				scaleVol.FilesetType = fsType
+			}
+			if isparentFilesetSpecified {
+				scaleVol.ParentFileset = parentFileset
+			}
+			if inodeLimSpecified {
+				scaleVol.InodeLimit = inodeLim
+			}
+		}
 
-	if scaleVol.IsFilesetBased {
-		if fsTypeSpecified {
-			scaleVol.FilesetType = fsType
+		if isNodeClassSpecified {
+			scaleVol.NodeClass = nodeClass
 		}
-		if isparentFilesetSpecified {
-			scaleVol.ParentFileset = parentFileset
-		}
-		if inodeLimSpecified {
-			scaleVol.InodeLimit = inodeLim
-		}
-	}
+	} else {
+		scaleVol.storageClassType = 1
 
-	if isNodeClassSpecified {
-		scaleVol.NodeClass = nodeClass
+		if isEncryptionsSpecified && encryption == "" {
+			isEncryptionsSpecified = false
+		}
+		if isCompressionSpecified && compression == "" {
+			isCompressionSpecified = false
+		}
+		if isReplicaSpecified && replica == "" {
+			isReplicaSpecified = false
+		}
+		if isTierSpecified && tier == "" {
+			isTierSpecified = false
+		}
+
+		if isEncryptionsSpecified && !(encryption == yes || encryption == no) {
+			return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for encryption")
+		}
+		if encryption == yes {
+			scaleVol.encryption = true
+		} else {
+			scaleVol.encryption = false
+		}
+
+		if isCompressionSpecified && !(compression == yes || compression == no) {
+			return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for compression")
+		}
+		if compression == yes {
+			scaleVol.compression = true
+		} else {
+			scaleVol.compression = false
+		}
+
+		if isReplicaSpecified {
+			replicacount, err := strconv.Atoi(replica)
+			if err != nil || !(replicacount == 1 || replicacount == 2 || replicacount == 3) {
+				return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for permissions")
+			}
+			scaleVol.replica = replicacount
+		}
+
+		if isTierSpecified {
+			scaleVol.tier = tier
+		}
+
+		// this will enforce the minimum volume size
+		scaleVol.IsFilesetBased = true
+		scaleVol.consistencyGroup = volOptions["csi.storage.k8s.io/pvc/namespace"]
+
 	}
 
 	return scaleVol, nil
