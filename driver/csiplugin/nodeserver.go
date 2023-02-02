@@ -337,6 +337,8 @@ func (ns *ScaleNodeServer) NodeGetVolumeStats(ctx context.Context, req *csi.Node
 		return nil, status.Error(codes.InvalidArgument, "volume stats are not supported for lightweight volumes")
 	}
 
+	return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("DEEBUG NodeGetVolumeStats"))
+
 	available, capacity, used, inodes, inodesFree, inodesUsed, err := utils.FsStatInfo(req.GetVolumePath())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("volume stat failed with error %v", err))
