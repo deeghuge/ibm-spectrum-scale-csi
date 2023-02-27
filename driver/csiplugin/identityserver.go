@@ -58,7 +58,7 @@ func (is *ScaleIdentityServer) Probe(ctx context.Context, req *csi.ProbeRequest)
 	// IsNodeComponentHealthy accepts nodeName as admin node name, daemon node name, etc.
 	ghealthy, err := is.Driver.connmap["primary"].IsNodeComponentHealthy(scalenodeID, "GPFS")
 	glog.V(4).Infof("DEEBUG Before")
-	time.Sleep(2 * time.Minute)
+	time.Sleep(10 * time.Second)
 	glog.V(4).Infof("DEEBUG After")
 	if ghealthy == false {
 		glog.Errorf("Probe: GPFS component on node %v is not healthy. Error: %v", scalenodeID, err)
