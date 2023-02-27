@@ -18,6 +18,7 @@ package scale
 
 import (
 	"context"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
@@ -56,6 +57,7 @@ func (is *ScaleIdentityServer) Probe(ctx context.Context, req *csi.ProbeRequest)
 	glog.V(4).Infof("Probe: scalenodeID:%s --known as-- k8snodeName: %s", scalenodeID, is.Driver.nodeID)
 	// IsNodeComponentHealthy accepts nodeName as admin node name, daemon node name, etc.
 	ghealthy, err := is.Driver.connmap["primary"].IsNodeComponentHealthy(scalenodeID, "GPFS")
+	time.Sleep(120)
 	if ghealthy == false {
 		glog.Errorf("Probe: GPFS component on node %v is not healthy. Error: %v", scalenodeID, err)
 		return &csi.ProbeResponse{Ready: &wrappers.BoolValue{Value: true}}, nil
