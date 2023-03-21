@@ -20,10 +20,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"k8s.io/klog/v2"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 
 	"github.com/IBM/ibm-spectrum-scale-csi/driver/csiplugin/connectors"
 	"github.com/IBM/ibm-spectrum-scale-csi/driver/csiplugin/utils"
@@ -68,6 +69,7 @@ type scaleVolume struct {
 	Compression        string                            `json:"compression"`
 	Tier               string                            `json:"tier"`
 	Shared             bool                              `json:"shared"`
+	ShallowCopy        bool                              `json:"shallowCopy"`
 }
 
 type scaleVolId struct {
@@ -154,6 +156,7 @@ func getScaleVolumeOptions(ctx context.Context, volOptions map[string]string) (*
 	tier, isTierSpecified := volOptions[connectors.UserSpecifiedTier]
 	cg, isCGSpecified := volOptions[connectors.UserSpecifiedConsistencyGroup]
 	shared, isSharedSpecified := volOptions[connectors.UserSpecifiedShared]
+	shallowCopy, isShallowCopySpefied := volOptions[connectors.UserSpecifiedShallowCopy]
 
 	// Handling empty values
 	scaleVol.VolDirBasePath = ""
@@ -165,10 +168,16 @@ func getScaleVolumeOptions(ctx context.Context, volOptions map[string]string) (*
 	scaleVol.StorageClassType = ""
 	scaleVol.Compression = ""
 	scaleVol.Tier = ""
+	scaleVol.ShallowCopy = false
 
 	if isSCTypeSpecified && storageClassType == "" {
 		isSCTypeSpecified = false
 	}
+
+	if isShallowCopySpefied && shallowCopy == "" {
+		isSCTypeSpecified = false
+	}
+
 	isSCAdvanced := false
 	if isSCTypeSpecified {
 		if storageClassType != scversion1 && storageClassType != scversion2 {
@@ -326,6 +335,19 @@ func getScaleVolumeOptions(ctx context.Context, volOptions map[string]string) (*
 		scaleVol.VolGid = gid
 	}
 
+	if isShallowCopySpefied {
+		icShallowCopy := strings.ToLower(shallowCopy)
+		if !(icShallowCopy == "true" || icShallowCopy == "false") {
+			return &scaleVolume{}, status.Error(codes.InvalidArgument, "invalid value specified for parameter icShallowCopy")
+		}
+		if icShallowCopy == "false" {
+			isSharedSpecified = false
+			scaleVol.ShallowCopy = false
+		} else {
+			scaleVol.ShallowCopy = true
+		}
+	}
+
 	if isSharedSpecified {
 		//ignore case of passed "shared" parameter
 		icShared := strings.ToLower(shared)
@@ -385,6 +407,11 @@ func getScaleVolumeOptions(ctx context.Context, volOptions map[string]string) (*
 			return &scaleVolume{}, status.Error(codes.InvalidArgument, "Failed to extract the consistencyGroup prefix")
 		}
 		scaleVol.ConsistencyGroup = fmt.Sprintf("%s-%s", cgPrefix, volOptions["csi.storage.k8s.io/pvc/namespace"])
+	}
+
+	if ! ( scaleVol.ShallowCopy == true && (scaleVol.StorageClassType == STORAGECLASS_ADVANCED || scaleVol.FilesetType == independentFileset ))
+	return &scaleVolume{}, status.Error(codes.InvalidArgument, "shallow is supported with StorageClass or Independent Fileset")
+
 	}
 
 	if isCompressionSpecified {
